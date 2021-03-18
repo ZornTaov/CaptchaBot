@@ -25,6 +25,7 @@ namespace CaptchaBot
             Events.JoinEvent += OnJoin;
             Events.CallbackEvent += OnCallbackQuery;
 
+            Events.PluginConfigKeyboardRequest += PluginConfigKeyboard;
             // Create a timer
             captchaTimer = new Timer();
             // Tell the timer what to do when it elapses
@@ -40,6 +41,10 @@ namespace CaptchaBot
 
         }
 
+        public Func<long, CallbackButtonRequestArgs> PluginConfigKeyboard = (chatID) =>
+        {
+            return new CallbackButtonRequestArgs() { text = "Captcha", callback = "captcha:"+chatID };
+        };
         private void CaptchaTimerEvent(object source, ElapsedEventArgs e) 
         {
             int count = 0;
@@ -58,7 +63,7 @@ namespace CaptchaBot
                     CaptchaDatabase.Save(cache.Value);
                 }
             }
-            DreadBot.Logger.LogDebug("Timers remaining: " + count);
+            //DreadBot.Logger.LogDebug("Timers remaining: " + count);
         }
 
         internal void OnJoin(EventArgs args)
@@ -106,7 +111,7 @@ namespace CaptchaBot
             Message msg = (args as MessageEventArgs).msg;
             if (msg.chat.type != "private") return;
             Match blocks = MatchTriggers(onTextTrigger, msg.text);
-            if (blocks.Groups.Count > 0 && (!string.IsNullOrEmpty(blocks.Groups[0].Value)))
+            if (blocks != null && blocks.Groups.Count > 0 && (!string.IsNullOrEmpty(blocks.Groups[0].Value)))
             {
                 if (blocks.Groups[1].Value == "start")
                 {
@@ -199,12 +204,68 @@ namespace CaptchaBot
         internal void OnCallbackQuery(EventArgs args)
         {
             CallbackQuery callback = (args as CallbackEventArgs).callbackQuery;
-            Match blocks = MatchTriggers(onCallbackQueryTrigger, "");
-            if (blocks != null)
+            Match blocks = MatchTriggers(onCallbackQueryTrigger, callback.data);
+            if (blocks != null && blocks.Groups.Count > 0 && (!string.IsNullOrEmpty(blocks.Groups[0].Value)))
             {
+                if (blocks.Groups[1].Value == "captcha")
+                {
+                    Methods.answerCallbackQuery(callback.id);
+                    string menu_text = "*Captcha Settings*\n\n" +
+                        "`Captcha Enabled`\nEnables/Disables the Captcha system.\n\n" +
+                        "`Captcha Action`\nSets the action to take if a user fails to solve the captcha. Kick, ban or mute.\n\n" +
+                        "`Captcha Tests`\nSets the number of tests/attempts a user has to solve. Min 1, Max 5, Default 3\n\n" +
+                        "`Timer`\nSets the amount of time in minutes a user has to solve captcha.\n"+
+                            "If this timer is exceeded, then the default action will be taken. Min 1, Max 60, default 3";
+
+                    InlineKeyboardMarkup keyboard = CaptchaConfig(long.Parse(blocks.Groups[2].Value));
+                    Methods.editMessageText(callback.from.id, callback.message.message_id, menu_text, "markdown", keyboard);
+                }
 
             }
 
+        }
+
+        private static InlineKeyboardMarkup CaptchaConfig(long chatID)
+        {
+            InlineKeyboardMarkup keyboard = new InlineKeyboardMarkup();
+
+            CaptchaCache cache = CaptchaDatabase.GetCache(chatID);
+            string toggle = "☑️";//off
+
+            if (cache.captchaEnabled) 
+            {
+                toggle = "✅";//on
+            }
+            int count = cache.testCountPreset;
+            int timeout = cache.timerPreset;
+            string action = cache.captchaAction;
+            string actiontext;
+            switch (action)
+            {
+                case "ban":
+                    actiontext = "🔨";
+                    break;
+                case "mute":
+                    actiontext = "👁";
+                    break;
+                default:
+                    actiontext = "👞";
+                    break;
+            }
+            keyboard.addCallbackButton("Captcha Enabled", "help:captcha:togglehelp", 0)
+                .addCallbackButton(toggle, "captcha:toggle:" + chatID, 0);
+            keyboard.addCallbackButton("Captcha Action", "help:captcha:actionhelp", 1)
+                .addCallbackButton(actiontext, "captcha:actiontoggle:" + chatID, 1);
+            keyboard.addCallbackButton("+", "captcha:add:" + chatID, 2)
+                .addCallbackButton(count+"", "help:captcha:testcount", 2)
+                .addCallbackButton("-", "captcha:minus:" + chatID, 2);
+            keyboard.addCallbackButton("+10", "captcha:add10:" + chatID, 3)
+                .addCallbackButton("+1", "captcha:add1:" + chatID, 3)
+                .addCallbackButton(timeout+"", "help:captcha:timeout", 3)
+                .addCallbackButton("-1", "captcha:minus1:" + chatID, 3)
+                .addCallbackButton("-10", "captcha:minus10:" + chatID, 3);
+            Menus.ConfigBackButton(ref keyboard, chatID);
+            return keyboard;
         }
 
         private void TakeAction(CaptchaCache cache, long userID)
@@ -354,7 +415,7 @@ namespace CaptchaBot
 
                     Match match = rx.Match(text);
 
-                    if(match.Groups.Count > 0)
+                    if(match.Groups.Count > 0 && !string.IsNullOrEmpty(match.Groups[0].Value))
                     {
                         return match;
                     }
@@ -363,16 +424,13 @@ namespace CaptchaBot
             return null;
         }
         private static string[] onTextTrigger = { 
-            @"^\/(start) (-?\d+)_(\d+)_captcha$",
-            @"^\/(captcha) (.*)"
+            @"^\/(start) (-?\d+)_(\d+)_captcha$"
         };
 
         private static string[] onCallbackQueryTrigger = {
-            //"^(captest):(-?%d+):(%d+):(%d+)", //Captcha answer buttons. 1(captest) 2(chat_id) 3(user_id) 4(hash)
-		    @"^config:(captcha):(-?\d+)$",
-            @"^config:captcha:(.*):(-?\d+)$",
-            @"^(menu):captcha:(.*)",
-            @"^captcha:(-?\d+)$"
+		    @"^(captcha):(-?\d+)$", //main menu with chatID
+            @"^captcha:(.*):(-?\d+)$", //config options, (toggle, actiontoggle, add, minus, add1, add10, minus1, minus10), chatID
+            @"^(help):captcha:(.*)" //help prompt
         };
     }
 }
