@@ -207,6 +207,8 @@ namespace CaptchaBot
             Match blocks = MatchTriggers(onCallbackQueryTrigger, callback.data);
             if (blocks != null && blocks.Groups.Count > 0 && (!string.IsNullOrEmpty(blocks.Groups[0].Value)))
             {
+                long chat_id = long.Parse(blocks.Groups[2].Value);
+                CaptchaCache cache = CaptchaDatabase.GetCache(chat_id);
                 if (blocks.Groups[1].Value == "captcha")
                 {
                     Methods.answerCallbackQuery(callback.id);
@@ -217,12 +219,165 @@ namespace CaptchaBot
                         "`Timer`\nSets the amount of time in minutes a user has to solve captcha.\n"+
                             "If this timer is exceeded, then the default action will be taken. Min 1, Max 60, default 3";
 
-                    InlineKeyboardMarkup keyboard = CaptchaConfig(long.Parse(blocks.Groups[2].Value));
+                    InlineKeyboardMarkup keyboard = CaptchaConfig(chat_id);
                     Methods.editMessageText(callback.from.id, callback.message.message_id, menu_text, "markdown", keyboard);
                 }
+                //Config CB
+                else if (blocks.Groups[1].Value == "toggle")
+                {
+                    if (cache.captchaEnabled)
+                    {
+                        cache.captchaEnabled = false;
+                        Methods.answerCallbackQuery(callback.id, "Captcha Disabled");
+                    }
+                    else
+                    {
+                        var res = Methods.getChat(chat_id);
+                        if (res.result.type == "group")
+                        {
+                            Methods.answerCallbackQuery(callback.id, "The group Must be a supergroup to use captcha.", true);
+                            return;
+                        }
+
+                        cache.captchaEnabled = true;
+                        Methods.answerCallbackQuery(callback.id, "Captcha Enabled");
+                    }
+                    Methods.editMessageReplyMarkup(callback.from.id, callback.message.message_id, keyboard: CaptchaConfig(chat_id));
+                }
+                else if (blocks.Groups[1].Value == "actiontoggle")
+                {
+                    
+                    if (cache.captchaAction == "ban")
+                    {
+                        cache.captchaAction = "mute";
+                        Methods.answerCallbackQuery(callback.id, "Captcha failure action set to Mute");
+                    }
+                    else if (cache.captchaAction == "mute")
+                    {
+                        cache.captchaAction = "kick";
+                        Methods.answerCallbackQuery(callback.id, "Captcha failure action set to Kick");
+                    }
+                    else
+                    {
+                        cache.captchaAction = "ban";
+                        Methods.answerCallbackQuery(callback.id, "Captcha failure action set to Ban");
+                    }
+                    Methods.editMessageReplyMarkup(callback.from.id, callback.message.message_id, keyboard: CaptchaConfig(chat_id));
+                }
+                else if (blocks.Groups[1].Value == "add")
+                {
+                    if (cache.testCountPreset == 5)
+                    {
+                        Methods.answerCallbackQuery(callback.id, "Maxed out at 5");
+                    }
+                    else
+                    {
+                        Methods.answerCallbackQuery(callback.id, "");
+                        cache.testCountPreset += 1;
+                        Methods.editMessageReplyMarkup(callback.from.id, callback.message.message_id, keyboard: CaptchaConfig(chat_id));
+                    }
+                }
+                else if (blocks.Groups[1].Value == "minus")
+                {
+                    if (cache.testCountPreset == 1)
+                    {
+                        Methods.answerCallbackQuery(callback.id, "1 Is the minimum");
+                    }
+                    else
+                    {
+                        Methods.answerCallbackQuery(callback.id, "");
+                        cache.testCountPreset -= 1;
+                        Methods.editMessageReplyMarkup(callback.from.id, callback.message.message_id, keyboard: CaptchaConfig(chat_id));
+                    }
+                }
+                else if (blocks.Groups[1].Value == "add1")
+                {
+                    if (cache.timerPreset == 60)
+                    {
+                        Methods.answerCallbackQuery(callback.id, "Maxed out at 1 hour.");
+                    }
+                    else
+                    {
+                        Methods.answerCallbackQuery(callback.id, "");
+                        cache.timerPreset += 1;
+                        Methods.editMessageReplyMarkup(callback.from.id, callback.message.message_id, keyboard: CaptchaConfig(chat_id));
+                    }
+                }
+                else if (blocks.Groups[1].Value == "add10")
+                {
+                    //            var state = tonumber(hget("chat:"..chat_id..":settings", "CapTimer")) or 3;
+                    if (cache.timerPreset == 60)
+                    {
+                        Methods.answerCallbackQuery(callback.id, "Maxed out at 1 hour.");
+                    }
+                    else if (cache.timerPreset > 50)
+                    {
+                        Methods.answerCallbackQuery(callback.id, "Maxed out at 1 hour");
+                        cache.timerPreset = 60;
+                        Methods.editMessageReplyMarkup(callback.from.id, callback.message.message_id, keyboard: CaptchaConfig(chat_id));
+                    }
+                    else
+                    {
+                        Methods.answerCallbackQuery(callback.id, "");
+                        cache.timerPreset += 10;
+                        Methods.editMessageReplyMarkup(callback.from.id, callback.message.message_id, keyboard: CaptchaConfig(chat_id));
+                    }
+                }
+                else if (blocks.Groups[1].Value == "minus1") 
+                {
+                    if (cache.timerPreset == 1)
+                    {
+                        Methods.answerCallbackQuery(callback.id, "1 Minute is the minimum.");
+                    }
+                    else
+                    {
+                        Methods.answerCallbackQuery(callback.id, "");
+                        cache.timerPreset -= 1;
+                        Methods.editMessageReplyMarkup(callback.from.id, callback.message.message_id, keyboard: CaptchaConfig(chat_id));
+                    }
+                }
+                else if (blocks.Groups[1].Value == "minus10")
+                {
+                    if (cache.timerPreset == 1)
+                    {
+                        Methods.answerCallbackQuery(callback.id, "1 Minute is the minimum.");
+                    }
+                    else if (cache.timerPreset < 11)
+                    {
+                        Methods.answerCallbackQuery(callback.id, "1 Minute is the minimum.");
+                        cache.timerPreset = 1;
+                        Methods.editMessageReplyMarkup(callback.from.id, callback.message.message_id, keyboard: CaptchaConfig(chat_id));
+                    }
+                    else
+                    {
+                        Methods.answerCallbackQuery(callback.id, "");
+                        cache.timerPreset -= 10;
+                        Methods.editMessageReplyMarkup(callback.from.id, callback.message.message_id, keyboard: CaptchaConfig(chat_id));
+                    }
+                }
+                //Help CB
+                else if (blocks.Groups[1].Value == "menu")
+                {
+                    if (blocks.Groups[2].Value == "togglehelp")
+                    {
+                        Methods.answerCallbackQuery(callback.id, "Enables/Disables the Captcha system.", true);
+                    }
+                    else if (blocks.Groups[2].Value == "actionhelp")
+                    {
+                        Methods.answerCallbackQuery(callback.id, "Which action the bot will take if a user fails to solve the Captcha. Kick, Ban or Mute", true);
+                    }
+                    else if (blocks.Groups[2].Value == "testcount")
+                    {
+                        Methods.answerCallbackQuery(callback.id, "How many Captchas should the user solve? 1-5 Default: 3", true);
+                    }
+                    else if (blocks.Groups[2].Value == "timeout")
+                    {
+                        Methods.answerCallbackQuery(callback.id, "Total amount of time to solve All captchas. In minutes. 3 minutes - 1 hour", true);
+                    }
+                }
+                CaptchaDatabase.Save(cache);
 
             }
-
         }
 
         private static InlineKeyboardMarkup CaptchaConfig(long chatID)
